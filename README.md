@@ -18,6 +18,23 @@ No QR codes, pairing codes or Mac pickers. The build phase writes the receiver's
 
 > **Demo app:** [MachangDoniel/ScreenBridgeDemo](https://github.com/MachangDoniel/ScreenBridgeDemo) shows a complete integration (UIKit tabs, navigation, reusable cells, modal, custom containment and SwiftUI).
 
+## Screenshots
+
+<table>
+  <tr>
+    <td align="center"><img src="Docs/images/01-floating-button.png" width="200" alt="App with the floating ScreenBridge button"><br><sub>Floating button (green = connected)</sub></td>
+    <td align="center"><img src="Docs/images/02-inspector.png" width="200" alt="Inspector sheet"><br><sub>Inspector sheet</sub></td>
+    <td align="center"><img src="Docs/images/03-element-source.png" width="200" alt="Element source for a label in a reusable cell"><br><sub>Element → registered source</sub></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="Docs/images/04-annotate.png" width="200" alt="Annotation editor with ellipse and redaction"><br><sub>Annotate + opaque redaction</sub></td>
+    <td align="center"><img src="Docs/images/05-sent.png" width="200" alt="Report acknowledged by the Mac"><br><sub>Acknowledged by the Mac</sub></td>
+    <td align="center"><img src="Docs/images/06-swiftui.png" width="200" alt="SwiftUI view source"><br><sub>SwiftUI <code>.screenBridgeSource</code></sub></td>
+  </tr>
+</table>
+
+Screens from the [demo app](https://github.com/MachangDoniel/ScreenBridgeDemo) on the iOS simulator.
+
 ## Quick start
 
 ```bash
