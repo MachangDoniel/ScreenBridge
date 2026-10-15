@@ -10,3 +10,6 @@ Mac/App/ScreenBridgeHelper.xcodeproj/
 Mac/App/Generated/
 # Never commit generated connection credentials
 ScreenBridgeConnection.json
+
+# Local project rules (not shared)
+CLAUDE.local.md

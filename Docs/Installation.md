@@ -20,7 +20,7 @@ macOS may ask to allow incoming connections (application firewall) and local net
 
 ## 2. Add the package
 
-In Xcode use **File › Add Package Dependencies…**, enter `https://github.com/MachangDoniel/ScreenBridge.git`, choose **Up to Next Major Version** from `0.1.0`, and link only the **ScreenBridge** product to your app target. (Package.swift users: `.package(url: "https://github.com/MachangDoniel/ScreenBridge.git", from: "0.1.0")`.)
+In Xcode use **File › Add Package Dependencies…**, enter `https://github.com/MachangDoniel/ScreenBridge.git`, choose **Up to Next Minor Version** from `0.1.0`, and link only the **ScreenBridge** product to your app target. (Package.swift users: `.package(url: "https://github.com/MachangDoniel/ScreenBridge.git", .upToNextMinor(from: "0.1.0"))`; while ScreenBridge is 0.x, minor versions may contain breaking changes.)
 
 `install-helper.sh` is in this repository, so clone it once to build the Mac helper:
 

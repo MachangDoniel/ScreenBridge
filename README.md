@@ -41,7 +41,7 @@ Screens from the [demo app](https://github.com/MachangDoniel/ScreenBridgeDemo) o
 ./Scripts/install-helper.sh
 ```
 
-1. Add the package: **File › Add Package Dependencies…** → `https://github.com/MachangDoniel/ScreenBridge.git`, rule **Up to Next Major Version** from `0.1.0`. Link only the `ScreenBridge` product to your app target.
+1. Add the package: **File › Add Package Dependencies…** → `https://github.com/MachangDoniel/ScreenBridge.git`, rule **Up to Next Minor Version** from `0.1.0` (0.x minor versions may contain breaking changes). Link only the `ScreenBridge` product to your app target.
 2. Add the build phase (one-time). Run `screenbridge print-build-phase` and paste its output into a **Run Script** phase placed last, set **Output Files**, uncheck **Based on dependency analysis**, and set `ENABLE_USER_SCRIPT_SANDBOXING = NO`. Add the two Info.plist keys. See [Docs/Installation.md](Docs/Installation.md).
 3. Start ScreenBridge:
 
