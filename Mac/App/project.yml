@@ -1,0 +1,42 @@
+name: ScreenBridgeHelper
+options:
+  bundleIdPrefix: dev.screenbridge
+  deploymentTarget:
+    macOS: "14.0"
+  createIntermediateGroups: true
+packages:
+  ScreenBridgeMac:
+    path: ..
+targets:
+  ScreenBridgeHelper:
+    type: application
+    platform: macOS
+    sources:
+      - Sources
+    dependencies:
+      - package: ScreenBridgeMac
+        product: ScreenBridgeMacCore
+    info:
+      path: Generated/Info.plist
+      properties:
+        CFBundleDisplayName: ScreenBridge
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        LSUIElement: true
+        LSApplicationCategoryType: public.app-category.developer-tools
+        NSLocalNetworkUsageDescription: ScreenBridge receives debug reports from your development builds on this local network.
+        NSBonjourServices:
+          - _screenbridge._tcp
+    settings:
+      base:
+        PRODUCT_NAME: ScreenBridge
+        PRODUCT_BUNDLE_IDENTIFIER: dev.screenbridge.helper
+        MARKETING_VERSION: 0.1.0
+        CURRENT_PROJECT_VERSION: 1
+        SWIFT_VERSION: "6.0"
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGN_IDENTITY: "-"
+        DEVELOPMENT_TEAM: ""
+        ENABLE_HARDENED_RUNTIME: NO
+        ENABLE_APP_SANDBOX: NO
+        COMBINE_HIDPI_IMAGES: YES
