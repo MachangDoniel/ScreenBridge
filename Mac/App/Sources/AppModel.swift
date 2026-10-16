@@ -89,9 +89,12 @@ final class AppModel: ObservableObject {
     // MARK: Actions
 
     func delete(_ id: String) {
-        try? ReportStore(home: home).delete(id)
-        if selectedReportID == id { selectedReportID = nil }
-        refresh()
+        do {
+            try ReportStore(home: home).delete(id)
+            handoffMessages[id] = nil
+            if selectedReportID == id { selectedReportID = nil }
+            refresh()
+        } catch { show("Could not delete report: \(error)") }
     }
 
     func revoke(_ credential: StoredCredential) {
@@ -121,8 +124,10 @@ final class AppModel: ObservableObject {
 
     func copyRequest(for id: String) {
         NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(Self.claudeRequest(for: id), forType: .string)
-        show("Copied the Claude request to the clipboard.")
+        let stored = try? ReportStore(home: home).load(id)
+        let reference = ClaudeHandoff.request(for: id, reportURL: stored?.directory.appendingPathComponent("report.json"))
+        NSPasteboard.general.setString(reference, forType: .string)
+        show("Copied report reference. Paste it into your AI coding tool.")
     }
 
     func copyScreenshot(for stored: StoredReport) {
@@ -148,34 +153,50 @@ final class AppModel: ObservableObject {
         } catch { show("Could not configure Claude Desktop: \(error)") }
     }
 
+    func deleteAllReports() {
+        for id in reports.map(\.id) { delete(id) }
+    }
+
     func openClaude(for stored: StoredReport, destination: ClaudeDestination = .desktop) {
         guard destination != .inbox else { return }
+        if destination == .reference {
+            copyRequest(for: stored.id)
+            let message = FocusedReferencePaster.pasteFromClipboard()
+            handoffMessages[stored.id] = message
+            show(message)
+            if notificationsAuthorized == true {
+                let content = UNMutableNotificationContent()
+                content.title = "ScreenBridge report \(stored.id)"
+                content.body = message
+                UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: stored.id, content: content, trigger: nil))
+            }
+            return
+        }
         let root = project(for: stored)?.rootPath
         do {
-            var prompt = Self.claudeRequest(for: stored.id)
-            if destination == .browser || destination == .code {
+            var prompt = ClaudeHandoff.request(for: stored.id, description: stored.report.description)
+            if destination == .browser {
                 let folder = try ClaudeHandoff.export(stored, projectRoot: root, home: home)
-                if destination == .browser {
-                    prompt = try String(contentsOf: folder.appendingPathComponent("report.md"), encoding: .utf8)
-                    NSWorkspace.shared.open(folder)
-                } else {
-                    prompt += " If ScreenBridge MCP is not configured, read the exported report at "
-                        + folder.appendingPathComponent("report.md").path
-                        + " and the images in that folder."
-                }
+                prompt = try String(contentsOf: folder.appendingPathComponent("report.md"), encoding: .utf8)
+                NSWorkspace.shared.open(folder)
+            } else if destination == .code {
+                prompt = ClaudeHandoff.request(for: stored.id,
+                                               reportURL: stored.directory.appendingPathComponent("report.json"))
             }
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(prompt, forType: .string)
             guard let url = ClaudeHandoff.url(destination: destination, prompt: prompt, projectRoot: root),
                   NSWorkspace.shared.urlForApplication(toOpen: url) != nil,
                   NSWorkspace.shared.open(url) else {
-                let message = "Could not open \(destination.title). Install Claude Desktop or choose the browser option. The request is copied and your report is saved."
+                let message = "Could not open \(destination.title). Install Claude Desktop or choose the browser option. Your report is saved and the handoff is copied to the clipboard."
                 handoffMessages[stored.id] = message
                 show(message)
                 return
             }
             let message: String
-            if destination == .browser {
+            if destination == .code {
+                message = "Opened Claude Code with a short report reference. Type what should change in its chat."
+            } else if destination == .browser {
                 message = "Opened Claude in your browser. Paste the copied report and attach PNG files from the export folder."
             } else if destination == .desktop && !claudeDesktopConfigured {
                 message = "Opened Claude Desktop with a prepared prompt. Configure ScreenBridge in Connection, then restart Claude to enable report and screenshot access."

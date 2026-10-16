@@ -3,19 +3,23 @@ import ScreenBridgeProtocol
 
 /// Builds reviewable Claude handoffs. This type never submits a model request.
 public enum ClaudeHandoff {
-    public static func request(for reportID: String) -> String {
-        "Read ScreenBridge report \(reportID) with get_debug_report, inspect any attached screenshots with get_report_images, read the registered source with read_related_source, and use the selected view details and logs to investigate the requested change. Propose a fix."
+    public static func request(for reportID: String, description: String = "", reportURL: URL? = nil) -> String {
+        let requested = description.trimmingCharacters(in: .whitespacesAndNewlines)
+        let prefix = requested.isEmpty ? "" : "Requested change:\n\(String(requested.prefix(4_000)))\n\n"
+        let reference = reportURL.map { "ScreenBridge context: [\(reportID)](\($0.absoluteString))" }
+            ?? "ScreenBridge report \(reportID)"
+        return prefix + reference
     }
 
     public static func url(destination: ClaudeDestination, prompt: String, projectRoot: String?) -> URL? {
-        if destination == .inbox { return nil }
+        if destination == .inbox || destination == .reference { return nil }
         // Keep report content out of browser URL/history. The portable prompt is copied locally.
         if destination == .browser { return URL(string: "https://claude.ai/new") }
         var components = URLComponents()
         components.scheme = "claude"
         components.host = destination == .code ? "code" : "claude.ai"
         components.path = "/new"
-        components.queryItems = [URLQueryItem(name: "q", value: String(prompt.prefix(12_000)))]
+        components.queryItems = prompt.isEmpty ? [] : [URLQueryItem(name: "q", value: String(prompt.prefix(12_000)))]
         if destination == .code, let projectRoot {
             components.queryItems?.append(URLQueryItem(name: "folder", value: projectRoot))
         }
@@ -34,7 +38,7 @@ public enum ClaudeHandoff {
         let fm = FileManager.default
         try fm.createDirectory(at: staging, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         do {
-            var text = "# ScreenBridge \(report.id)\n\nInvestigate this report and propose a fix.\n\n## Requested change\n\(report.description)\n"
+            var text = "# ScreenBridge \(report.id)\n\n## Requested change\n\(report.description)\n"
             if let selection = report.selection {
                 text += "\n## Selected object\n\(selection.displayName) (\(selection.className))\n"
                 for (key, value) in (selection.properties ?? [:]).sorted(by: { $0.key < $1.key }) {
@@ -64,7 +68,10 @@ public enum ClaudeHandoff {
                 } catch { text += "Unavailable: \(error)\n" }
             }
             if !report.images.isEmpty {
-                text += "\n## Screenshots\nAttach the PNG files in this folder to the Claude chat.\n"
+                text += "\n## Screenshots\n"
+                for image in report.images where ReportStore.allowedPartNames.contains(image.fileName) {
+                    text += "![\(image.role.rawValue)](\(image.fileName))\n"
+                }
             }
             for image in report.images {
                 guard ReportStore.allowedPartNames.contains(image.fileName), let source = stored.imageURL(image.role) else { continue }

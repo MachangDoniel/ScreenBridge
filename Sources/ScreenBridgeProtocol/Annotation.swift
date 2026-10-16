@@ -145,6 +145,18 @@ public struct Annotation: Codable, Sendable, Equatable, Identifiable {
         return result
     }
 
+    /// Stretch each axis independently around the center; preserve stroke thickness.
+    public func stretched(horizontal: Double, vertical: Double) -> Annotation {
+        guard horizontal.isFinite, vertical.isFinite, horizontal > 0, vertical > 0 else { return self }
+        let center = SBPoint(x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2)
+        var result = self
+        result.points = points.map {
+            SBPoint(x: center.x + ($0.x - center.x) * horizontal,
+                    y: center.y + ($0.y - center.y) * vertical)
+        }
+        return result
+    }
+
     /// Whether the annotation carries enough geometry to be rendered.
     public var isRenderable: Bool {
         switch tool {

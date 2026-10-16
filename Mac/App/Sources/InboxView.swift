@@ -52,6 +52,7 @@ struct InboxView: View {
 
 struct ReportListView: View {
     @ObservedObject var model: AppModel
+    @State private var confirmingDeleteAll = false
 
     var body: some View {
         Group {
@@ -67,7 +68,7 @@ struct ReportListView: View {
                         ReportRow(stored: r, projectName: model.project(for: r)?.name)
                             .tag(r.id)
                             .contextMenu {
-                                Button("Copy Claude request") { model.copyRequest(for: r.id) }
+                                Button("Copy report reference") { model.copyRequest(for: r.id) }
                                 Button("Delete", role: .destructive) { model.delete(r.id) }
                             }
                     }
@@ -82,6 +83,17 @@ struct ReportListView: View {
             ToolbarItem {
                 Button("Refresh", systemImage: "arrow.clockwise") { model.refresh() }
             }
+            ToolbarItem {
+                Button("Delete all reports", systemImage: "trash", role: .destructive) {
+                    confirmingDeleteAll = true
+                }
+                .disabled(model.reports.isEmpty)
+            }
+        }
+        .confirmationDialog("Delete all reports and their saved screenshots?", isPresented: $confirmingDeleteAll) {
+            Button("Delete all reports", role: .destructive) { model.deleteAllReports() }
+        } message: {
+            Text("This removes the inbox reports and their exported files from this Mac.")
         }
     }
 }
@@ -132,6 +144,13 @@ struct ReportDetailView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 header
+                HStack {
+                    Text("Saved files: \(stored.directory.path)")
+                        .font(.caption.monospaced()).textSelection(.enabled)
+                    Button("Show saved files", systemImage: "folder") {
+                        NSWorkspace.shared.open(stored.directory)
+                    }
+                }
                 if let message = model.handoffMessages[stored.id] {
                     Label(message, systemImage: "paperplane").font(.callout).foregroundStyle(.secondary)
                 }
@@ -157,7 +176,7 @@ struct ReportDetailView: View {
                 }
                 .disabled(primaryAnchor == nil || model.project(for: stored) == nil)
                 .help(primaryAnchor.map { "Open \($0.path ?? "")\($0.line.map { ":\($0)" } ?? "") in Xcode" } ?? "No registered source file")
-                Button("Prepare for Claude", systemImage: "sparkles") { preparing = true }
+                Button("AI tools", systemImage: "sparkles") { preparing = true }
                 Button("Copy request", systemImage: "doc.on.doc") { model.copyRequest(for: report.id) }
                 Button("Delete", systemImage: "trash", role: .destructive) { model.delete(report.id) }
             }
@@ -419,8 +438,8 @@ struct PrepareForClaudeSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Prepare for Claude").font(.title2.weight(.semibold))
-            Text("Open Claude Desktop or Claude Code with a prepared prompt. Claude can read the report and screenshots through ScreenBridge. Browser chats use an exported report and manual image attachments.")
+            Text("AI tools").font(.title2.weight(.semibold))
+            Text("Copy a report reference for any AI coding tool with local file access, or open a supported Claude destination. Browser chats require exported files.")
                 .foregroundStyle(.secondary)
             GroupBox {
                 Text(AppModel.claudeRequest(for: reportID))
@@ -435,7 +454,7 @@ struct PrepareForClaudeSheet: View {
             }
             if let stored = try? ReportStore(home: model.home).load(reportID) {
                 HStack {
-                    ForEach([ClaudeDestination.desktop, .code, .browser]) { destination in
+                    ForEach([ClaudeDestination.reference, .code, .desktop, .browser]) { destination in
                         Button(destination.title) { model.openClaude(for: stored, destination: destination) }
                     }
                 }
@@ -448,7 +467,7 @@ struct PrepareForClaudeSheet: View {
                     Text(message).font(.callout).foregroundStyle(.secondary)
                 }
             }
-            Text("Review the prepared prompt and press Send in Claude. Browser: paste the copied report and attach the exported PNG files.")
+            Text("Claude Code: write your request beside the short report reference. Browser: paste the report and attach the exported PNG files.")
                 .font(.caption).foregroundStyle(.secondary)
             HStack {
                 if !model.claudeDesktopConfigured {
@@ -456,7 +475,7 @@ struct PrepareForClaudeSheet: View {
                 }
                 Spacer()
                 Button("Close") { dismiss() }
-                Button("Copy request") {
+                Button("Copy reference") {
                     model.copyRequest(for: reportID)
                     dismiss()
                 }

@@ -2,7 +2,7 @@
 import Foundation
 
 public enum ClaudeDestination: String, Codable, Sendable, CaseIterable, Identifiable {
-    case desktop, code, browser, inbox
+    case desktop, code, browser, inbox, reference
     public var id: String { rawValue }
     public var title: String {
         switch self {
@@ -10,6 +10,7 @@ public enum ClaudeDestination: String, Codable, Sendable, CaseIterable, Identifi
         case .code: return "Claude Code"
         case .browser: return "Claude in browser"
         case .inbox: return "Mac inbox only"
+        case .reference: return "Paste into focused AI tool"
         }
     }
 }

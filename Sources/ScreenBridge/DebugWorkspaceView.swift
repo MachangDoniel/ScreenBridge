@@ -17,7 +17,7 @@ struct DebugWorkspaceView: View {
         GeometryReader { geometry in
             let width = min(392, max(48, geometry.size.width - 16))
             let size = toolsHidden ? CGSize(width: 44, height: 44)
-                : CGSize(width: width, height: model.hasEdits ? 102 : 52)
+                : CGSize(width: width, height: model.hasEdits ? 110 : 52)
             let origin = center(in: geometry.size, palette: size)
             ZStack(alignment: .topLeading) {
                 if let capture = model.capture {
@@ -115,19 +115,25 @@ struct DebugWorkspaceView: View {
 
             if model.hasEdits {
                 HStack(spacing: 0) {
-                    Button { onSend(.inbox) } label: {
+                    Button { onSend(model.destination) } label: {
                         Label("Send", systemImage: "paperplane").font(.system(size: 13, weight: .medium))
-                            .padding(.horizontal, 12).frame(height: 40)
+                            .frame(width: 112, height: 48)
+                            .contentShape(Rectangle())
                     }
                     .accessibilityIdentifier("screenbridge.send")
                     Divider().frame(height: 18)
-                    Button { onSend(.code) } label: {
-                        ClaudeMark().stroke(Color(red: 0.8, green: 0.4, blue: 0.29), style: StrokeStyle(lineWidth: 1.8, lineCap: .round))
-                            .frame(width: 21, height: 21).frame(width: 44, height: 40)
+                    Menu {
+                        ForEach([ClaudeDestination.reference, .code, .desktop, .browser, .inbox]) { destination in
+                            Button(destination.title) { onSend(destination) }
+                        }
+                    } label: {
+                        Image(systemName: "sparkles")
+                            .foregroundStyle(.indigo)
+                            .frame(width: 48, height: 48)
                             .contentShape(Rectangle())
                     }
-                    .accessibilityLabel("Send to Claude")
-                    .accessibilityIdentifier("screenbridge.claude")
+                    .accessibilityLabel("AI tools")
+                    .accessibilityIdentifier("screenbridge.ai-tools")
                 }
                 .buttonStyle(.plain)
                 .background {
@@ -184,20 +190,6 @@ struct DebugWorkspaceView: View {
         .buttonStyle(.plain)
         .accessibilityLabel(title)
         .accessibilityAddTraits(selected ? [.isSelected] : [])
-    }
-}
-
-private struct ClaudeMark: Shape {
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        let center = CGPoint(x: rect.midX, y: rect.midY)
-        for index in 0..<12 {
-            let angle = CGFloat(index) * .pi / 6
-            let radius = min(rect.width, rect.height) * (index.isMultiple(of: 3) ? 0.46 : 0.4)
-            path.move(to: CGPoint(x: center.x + cos(angle) * 2, y: center.y + sin(angle) * 2))
-            path.addLine(to: CGPoint(x: center.x + cos(angle) * radius, y: center.y + sin(angle) * radius))
-        }
-        return path
     }
 }
 

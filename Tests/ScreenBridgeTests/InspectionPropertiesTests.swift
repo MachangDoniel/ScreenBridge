@@ -87,12 +87,12 @@ import ScreenBridgeProtocol
         #expect(model.selectedRegion == area && model.hasEdits)
     }
 
-    @Test func selectedAreaIsOutlinedInExportAndCodeIsDefault() throws {
+    @Test func selectedAreaIsOutlinedInExportAndFocusedToolIsDefault() throws {
         let model = model()
         let area = SBRect(x: 5, y: 10, width: 20, height: 30)
         model.selectedRegion = area
         let payload = try model.buildPayload()
-        #expect(payload.report.claudeDestination == .code)
+        #expect(payload.report.claudeDestination == .reference)
         #expect(payload.report.selectedRegion == area)
         #expect(payload.report.annotations.last?.tool == .rectangle)
         #expect(payload.report.annotations.last?.bounds == area)

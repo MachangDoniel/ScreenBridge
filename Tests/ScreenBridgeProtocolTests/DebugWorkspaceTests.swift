@@ -4,6 +4,19 @@ import Testing
 @testable import ScreenBridgeProtocol
 
 @Suite struct DebugWorkspaceTests {
+    @Test func independentAxisStretchPreservesOtherAxisAndStroke() {
+        let shape = Annotation(tool: .rectangle, points: [SBPoint(x: 10, y: 20), SBPoint(x: 110, y: 60)])
+        let wide = shape.stretched(horizontal: 2, vertical: 1)
+        #expect(wide.bounds.width == 200 && wide.bounds.height == 40)
+        #expect(wide.bounds.x + wide.bounds.width / 2 == 60)
+        let short = wide.stretched(horizontal: 1, vertical: 0.5)
+        #expect(short.bounds.width == 200 && short.bounds.height == 20)
+        #expect(short.bounds.y + short.bounds.height / 2 == 40)
+        #expect(short.id == shape.id && short.strokeWidth == shape.strokeWidth)
+        #expect(wide.stretched(horizontal: 0.5, vertical: 1) == shape)
+        #expect(shape.stretched(horizontal: 0, vertical: 1) == shape)
+    }
+
     @Test func resizingPreservesCenterAndIdentity() {
         let arrow = Annotation(tool: .arrow, points: [SBPoint(x: 10, y: 20), SBPoint(x: 110, y: 60)])
         let large = arrow.resized(by: 1.25)

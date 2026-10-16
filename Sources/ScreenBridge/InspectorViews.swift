@@ -463,10 +463,14 @@ struct ReportEditorView: View {
                     Picker("Open on Mac", selection: $model.destination) {
                         ForEach(ClaudeDestination.allCases) { Text($0.title).tag($0) }
                     }
-                    Text(model.destination == .browser
+                    Text(model.destination == .reference
+                         ? "Your Mac pastes a short reference at the cursor in your focused AI tool. Allow ScreenBridge Accessibility access once. If no editable field is focused, the reference stays on the clipboard."
+                         : model.destination == .browser
                          ? "Your Mac opens Claude in a browser and an export folder. Paste the copied report and attach its PNG files."
                          : model.destination == .inbox
                          ? "Save to the ScreenBridge inbox on your Mac."
+                         : model.destination == .code
+                         ? "Your Mac opens Claude Code with a short report reference. Type what should change in its chat."
                          : "Your Mac opens \(model.destination.title) with a prepared prompt. Review it and press Send in Claude. Configure the ScreenBridge connector on your Mac to read the report and screenshots.")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
@@ -483,7 +487,7 @@ struct ReportEditorView: View {
                     descriptionFocused = false
                     model.send()
                 } label: {
-                    Text(model.destination == .inbox ? "Send to Mac" : "Send to Claude").frame(maxWidth: .infinity)
+                    Text(model.destination == .inbox ? "Send to Mac" : "Send report").frame(maxWidth: .infinity)
                 }
                 .accessibilityIdentifier("screenbridge.submit")
                 .buttonStyle(.borderedProminent)
@@ -524,6 +528,8 @@ struct AnnotationCanvas: View {
     @State private var resizingAnnotation: Annotation?
     @State private var resizeFactor = 1.0
     @State private var suppressDrag = false
+    @State private var stretchingAnnotation: Annotation?
+    @State private var stretchScale = CGSize(width: 1, height: 1)
 
     var body: some View {
         GeometryReader { geo in
@@ -537,7 +543,9 @@ struct AnnotationCanvas: View {
                     .accessibilityHidden(true)
                 Canvas { ctx, _ in
                     for a in annotations + (draft.map { [$0] } ?? []) {
-                        let displayed = resizingAnnotation?.id == a.id ? a.resized(by: resizeFactor)
+                        let displayed = stretchingAnnotation?.id == a.id
+                            ? a.stretched(horizontal: Double(stretchScale.width), vertical: Double(stretchScale.height))
+                            : resizingAnnotation?.id == a.id ? a.resized(by: resizeFactor)
                             : (movingAnnotation?.id == a.id
                                ? a.translated(dx: Double(moveOffset.width), dy: Double(moveOffset.height)) : a)
                         Self.draw(displayed, in: &ctx, mapping: mapping)
@@ -564,7 +572,7 @@ struct AnnotationCanvas: View {
                 DragGesture(minimumDistance: 0)
                     .onChanged { value in
                         guard mapping.displayRect.contains(value.startLocation) else { return }
-                        guard !suppressDrag, resizingAnnotation == nil else { return }
+                        guard !suppressDrag, resizingAnnotation == nil, stretchingAnnotation == nil else { return }
                         if mode == .inspect { return }
                         if mode == .editAnnotations {
                             if movingAnnotation == nil {
@@ -620,7 +628,7 @@ struct AnnotationCanvas: View {
             .simultaneousGesture(
                 MagnificationGesture()
                     .onChanged { factor in
-                        guard mode == .editAnnotations else { return }
+                        guard mode == .editAnnotations, stretchingAnnotation == nil else { return }
                         if resizingAnnotation == nil {
                             resizingAnnotation = annotations.first { $0.id == selectedAnnotationID }
                         }
@@ -641,7 +649,7 @@ struct AnnotationCanvas: View {
                     }
             )
             .overlay(alignment: .topLeading) {
-                if mode == .editAnnotations, movingAnnotation == nil, resizingAnnotation == nil,
+                if mode == .editAnnotations, movingAnnotation == nil, resizingAnnotation == nil, stretchingAnnotation == nil,
                    let selected = annotations.first(where: { $0.id == selectedAnnotationID }) {
                     let b = selected.bounds
                     let anchor = mapping.viewPoint(fromImage: CGPoint(x: b.x + b.width / 2, y: b.y))
@@ -663,12 +671,68 @@ struct AnnotationCanvas: View {
                               y: anchor.y >= 52 ? anchor.y - 28 : min(geo.size.height - 24, anchor.y + CGFloat(b.height) * mapping.pointsPerPixel + 28))
                 }
             }
+            .overlay(alignment: .topLeading) {
+                if mode == .editAnnotations, movingAnnotation == nil, resizingAnnotation == nil,
+                   let selected = annotations.first(where: { $0.id == selectedAnnotationID }) {
+                    let displayed = selected.stretched(horizontal: Double(stretchScale.width), vertical: Double(stretchScale.height))
+                    let b = displayed.bounds
+                    if selected.bounds.width > 1 {
+                        stretchHandle(selected, horizontal: true, mapping: mapping)
+                            .position(clampedHandle(mapping.viewPoint(fromImage: CGPoint(x: b.x + b.width, y: b.y + b.height / 2)), in: geo.size))
+                    }
+                    if selected.bounds.height > 1 {
+                        stretchHandle(selected, horizontal: false, mapping: mapping)
+                            .position(clampedHandle(mapping.viewPoint(fromImage: CGPoint(x: b.x + b.width / 2, y: b.y + b.height)), in: geo.size))
+                    }
+                }
+            }
             .accessibilityElement(children: .contain)
             .accessibilityLabel("Screenshot")
             .accessibilityValue(annotationAccessibilityValue)
             .accessibilityHint(mode == .inspect ? "Tap to inspect a view." : mode == .editAnnotations ? "Tap an annotation to select it. Drag to move; pinch to resize." : "Drag to draw with the selected tool.")
         }
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+
+    private func clampedHandle(_ point: CGPoint, in size: CGSize) -> CGPoint {
+        CGPoint(x: min(max(16, point.x), size.width - 16), y: min(max(16, point.y), size.height - 16))
+    }
+
+    private func stretchHandle(_ annotation: Annotation, horizontal: Bool, mapping: AspectFitMapping) -> some View {
+        Image(systemName: horizontal ? "arrow.left.and.right" : "arrow.up.and.down")
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundStyle(.blue)
+            .frame(width: 30, height: 30)
+            .background(.regularMaterial, in: Circle())
+            .overlay(Circle().strokeBorder(.blue, lineWidth: 1.5))
+            .contentShape(Circle())
+            .gesture(
+                DragGesture(minimumDistance: 0, coordinateSpace: .global)
+                    .onChanged { value in
+                        if stretchingAnnotation == nil { stretchingAnnotation = annotation }
+                        guard let original = stretchingAnnotation else { return }
+                        let length = horizontal ? original.bounds.width : original.bounds.height
+                        let delta = horizontal ? value.translation.width : value.translation.height
+                        let factor = min(10, max(0.1, 1 + 2 * Double(delta / mapping.pointsPerPixel) / max(1, length)))
+                        stretchScale = horizontal ? CGSize(width: factor, height: 1) : CGSize(width: 1, height: factor)
+                    }
+                    .onEnded { _ in
+                        if let original = stretchingAnnotation,
+                           let index = annotations.firstIndex(where: { $0.id == original.id }) {
+                            annotations[index] = original.stretched(horizontal: Double(stretchScale.width), vertical: Double(stretchScale.height))
+                        }
+                        stretchingAnnotation = nil
+                        stretchScale = CGSize(width: 1, height: 1)
+                    }
+            )
+            .accessibilityElement()
+            .accessibilityLabel(horizontal ? "Resize width" : "Resize height")
+            .accessibilityAdjustableAction { direction in
+                guard let index = annotations.firstIndex(where: { $0.id == annotation.id }) else { return }
+                let factor = direction == .increment ? 1.1 : 0.9
+                annotations[index] = annotations[index].stretched(horizontal: horizontal ? factor : 1,
+                                                                 vertical: horizontal ? 1 : factor)
+            }
     }
 
     private var annotationAccessibilityValue: String {
@@ -842,7 +906,9 @@ struct SendStatusView: View {
                 Text("On your Mac. Report \(id) is ready.")
                     .font(.title3.weight(.semibold))
                     .multilineTextAlignment(.center)
-                Text(duplicate ? "Your Mac already had this report. Open its inbox to prepare it again." : model.destination == .inbox ? "Open the ScreenBridge inbox on your Mac." : "Check \(model.destination.title) on your Mac. Review and send the prepared prompt. If it could not open, use the report in the ScreenBridge inbox.")
+                Text("Saved in ScreenBridge → Reports on your Mac, with your selected screenshots and context.")
+                    .font(.footnote).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                Text(duplicate ? "Your Mac already had this report. Open its inbox to prepare it again." : model.destination == .inbox ? "Open the ScreenBridge inbox on your Mac." : model.destination == .reference ? "Check the focused message field in your Mac AI tool. If automatic paste is unavailable, use ⌘V." : model.destination == .code ? "In Claude Code, type what should change beside the short report reference." : "Check \(model.destination.title) on your Mac. Review and send the prepared prompt. If it could not open, use the report in the ScreenBridge inbox.")
                     .font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
             case .queued(_, let reason):
                 StatusIcon(symbol: "tray.and.arrow.up.fill", color: .orange)

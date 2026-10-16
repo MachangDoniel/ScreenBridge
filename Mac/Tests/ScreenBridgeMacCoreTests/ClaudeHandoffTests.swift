@@ -4,6 +4,28 @@ import Testing
 import ScreenBridgeProtocol
 
 @Suite struct ClaudeHandoffTests {
+    @Test func blankCodeChatDoesNotIncludePromptText() throws {
+        let url = try #require(ClaudeHandoff.url(destination: .code, prompt: "", projectRoot: "/tmp/App"))
+        let query = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        #expect(!query.contains { $0.name == "q" })
+        #expect(query.contains { $0.name == "folder" && $0.value == "/tmp/App" })
+    }
+
+    @Test func codeReferenceIsOnlyAShortFileLink() {
+        let url = URL(fileURLWithPath: "/tmp/ScreenBridge Reports/SB-123456789ABC/report.md")
+        let prompt = ClaudeHandoff.request(for: "SB-123456789ABC", reportURL: url)
+        #expect(prompt == "ScreenBridge context: [SB-123456789ABC](\(url.absoluteString))")
+        #expect(!prompt.contains("get_debug_report"))
+        #expect(ClaudeHandoff.request(for: "SB-123456789ABC") == "ScreenBridge report SB-123456789ABC")
+    }
+
+    @Test func writtenRequestIsIncludedInPreparedPrompt() {
+        let prompt = ClaudeHandoff.request(for: "SB-123456789ABC", description: "  Fix the clipped title  ")
+        #expect(prompt.hasPrefix("Requested change:\nFix the clipped title\n\n"))
+        #expect(prompt.contains("SB-123456789ABC"))
+        #expect(!ClaudeHandoff.request(for: "SB-123456789ABC").contains("Requested change:"))
+    }
+
     @Test func desktopPrefillsReviewablePromptWithEncodedCharacters() throws {
         let url = try #require(ClaudeHandoff.url(destination: .desktop, prompt: "Read SB & check #1 + 日本語", projectRoot: nil))
         let components = try #require(URLComponents(url: url, resolvingAgainstBaseURL: false))
@@ -19,6 +41,7 @@ import ScreenBridgeProtocol
         #expect(components.host == "code" && components.path == "/new")
         #expect(components.queryItems?.first { $0.name == "folder" }?.value == "/Users/me/App Folder")
         #expect(ClaudeHandoff.url(destination: .inbox, prompt: "ignored", projectRoot: nil) == nil)
+        #expect(ClaudeHandoff.url(destination: .reference, prompt: "ignored", projectRoot: nil) == nil)
         #expect(ClaudeHandoff.url(destination: .browser, prompt: "local details", projectRoot: nil)?.absoluteString == "https://claude.ai/new")
     }
 
@@ -35,6 +58,7 @@ import ScreenBridgeProtocol
         let stored = try store.load(report.id)
         let folder = try ClaudeHandoff.export(stored, projectRoot: repo.path, home: home)
         let summary = try String(contentsOf: folder.appendingPathComponent("report.md"), encoding: .utf8)
+        #expect(!FileManager.default.fileExists(atPath: folder.appendingPathComponent("report.txt").path))
         #expect(summary.contains("Title is clipped"))
         #expect(summary.contains("visible log"))
         #expect(summary.contains("struct Profile"))

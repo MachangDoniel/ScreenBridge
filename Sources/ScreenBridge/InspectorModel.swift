@@ -43,7 +43,7 @@ final class InspectorModel: ObservableObject {
     @Published var includeViewDetails = true
     @Published var includeSource = true
     @Published var includeScreenshots = true
-    @Published var destination: ClaudeDestination = .code
+    @Published var destination: ClaudeDestination = .reference
     @Published var annotationColor = SBColor.markup
     @Published var workspaceMode: WorkspaceMode = .inspect
     @Published var selectedRegion: SBRect? {
