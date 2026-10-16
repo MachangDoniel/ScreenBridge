@@ -265,7 +265,7 @@ enum ElementInspector {
             isSwiftUIMarker: view is SourceMarkerView,
             frameInScreenshot: pixelFrame,
             hierarchy: hierarchy(of: view),
-            notes: notes
+            notes: notes, properties: properties(of: view)
         )
         return ResolvedSelection(
             element: element, screen: screen,
@@ -339,6 +339,38 @@ enum ElementInspector {
             }
         }
         return nil
+    }
+
+    /// Explicitly supported values only; never introspect arbitrary app data or secure input.
+    static func properties(of view: UIView) -> [String: String] {
+        var values = [
+            "frame": NSCoder.string(for: view.frame),
+            "bounds": NSCoder.string(for: view.bounds),
+            "alpha": String(format: "%.2f", view.alpha),
+            "hidden": String(view.isHidden),
+            "interactive": String(view.isUserInteractionEnabled)
+        ]
+        if let input = view as? UITextField, input.isSecureTextEntry {
+            values["text"] = "Secure input (omitted)"
+            return values
+        }
+        if let input = view as? UITextView, input.isSecureTextEntry {
+            values["text"] = "Secure input (omitted)"
+            return values
+        }
+        func add(_ key: String, _ value: String?) {
+            if let value, !value.isEmpty { values[key] = LogSanitizer.sanitize(value) }
+        }
+        add("accessibility label", view.accessibilityLabel)
+        add("accessibility value", view.accessibilityValue)
+        if let label = view as? UILabel { add("text", label.text) }
+        if let button = view as? UIButton { add("title", button.currentTitle) }
+        if let field = view as? UITextField { add("text", field.text); add("placeholder", field.placeholder) }
+        if let text = view as? UITextView { add("text", text.text) }
+        if let control = view as? UIControl { values["enabled"] = String(control.isEnabled); values["selected"] = String(control.isSelected) }
+        if let toggle = view as? UISwitch { values["on"] = String(toggle.isOn) }
+        if let slider = view as? UISlider { values["value"] = String(slider.value) }
+        return values
     }
 
     static func hierarchy(of view: UIView) -> [ElementNode] {

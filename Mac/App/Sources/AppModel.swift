@@ -24,6 +24,7 @@ final class AppModel: ObservableObject {
     @Published var credentials: [StoredCredential] = []
     @Published var notificationsAuthorized: Bool?
     @Published var toast: String?
+    @Published var handoffMessages: [String: String] = [:]
 
     let home = SBHome.default()
     private(set) var identity: ReceiverIdentity?
@@ -80,6 +81,9 @@ final class AppModel: ObservableObject {
         selectedReportID = stored.id
         sidebar = .reports
         postNotification(for: stored)
+        if let destination = stored.report.claudeDestination, destination != .inbox {
+            openClaude(for: stored, destination: destination)
+        }
     }
 
     // MARK: Actions
@@ -112,13 +116,79 @@ final class AppModel: ObservableObject {
     }
 
     static func claudeRequest(for id: String) -> String {
-        "Read ScreenBridge report \(id), inspect its screenshot and linked source, and propose a fix."
+        ClaudeHandoff.request(for: id)
     }
 
     func copyRequest(for id: String) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(Self.claudeRequest(for: id), forType: .string)
         show("Copied the Claude request to the clipboard.")
+    }
+
+    func copyScreenshot(for stored: StoredReport) {
+        guard let url = stored.imageURL(.annotated), let image = NSImage(contentsOf: url) else {
+            show("This report has no screenshot.")
+            return
+        }
+        NSPasteboard.general.clearContents()
+        guard NSPasteboard.general.writeObjects([image]) else {
+            show("Could not copy the screenshot.")
+            return
+        }
+        show("Screenshot copied. Paste into Claude with ⌘V to attach it.")
+    }
+
+    func configureClaudeDesktop() {
+        let config = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Application Support/Claude/claude_desktop_config.json")
+        do {
+            try ClaudeHandoff.configureDesktop(command: ShimInstaller.mcpCommandPath(home: home), at: config)
+            objectWillChange.send()
+            show("ScreenBridge configured. Quit and reopen Claude Desktop to load the connector.")
+        } catch { show("Could not configure Claude Desktop: \(error)") }
+    }
+
+    func openClaude(for stored: StoredReport, destination: ClaudeDestination = .desktop) {
+        guard destination != .inbox else { return }
+        let root = project(for: stored)?.rootPath
+        do {
+            var prompt = Self.claudeRequest(for: stored.id)
+            if destination == .browser || destination == .code {
+                let folder = try ClaudeHandoff.export(stored, projectRoot: root, home: home)
+                if destination == .browser {
+                    prompt = try String(contentsOf: folder.appendingPathComponent("report.md"), encoding: .utf8)
+                    NSWorkspace.shared.open(folder)
+                } else {
+                    prompt += " If ScreenBridge MCP is not configured, read the exported report at "
+                        + folder.appendingPathComponent("report.md").path
+                        + " and the images in that folder."
+                }
+            }
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(prompt, forType: .string)
+            guard let url = ClaudeHandoff.url(destination: destination, prompt: prompt, projectRoot: root),
+                  NSWorkspace.shared.urlForApplication(toOpen: url) != nil,
+                  NSWorkspace.shared.open(url) else {
+                let message = "Could not open \(destination.title). Install Claude Desktop or choose the browser option. The request is copied and your report is saved."
+                handoffMessages[stored.id] = message
+                show(message)
+                return
+            }
+            let message: String
+            if destination == .browser {
+                message = "Opened Claude in your browser. Paste the copied report and attach PNG files from the export folder."
+            } else if destination == .desktop && !claudeDesktopConfigured {
+                message = "Opened Claude Desktop with a prepared prompt. Configure ScreenBridge in Connection, then restart Claude to enable report and screenshot access."
+            } else {
+                message = "Requested \(destination.title) with a prepared prompt. Review and send it in Claude."
+            }
+            handoffMessages[stored.id] = message
+            show(message)
+        } catch {
+            let message = "Could not prepare Claude handoff: \(error). Your report remains in the inbox."
+            handoffMessages[stored.id] = message
+            show(message)
+        }
     }
 
     func copyMCPConfig() {

@@ -19,9 +19,11 @@ Known limit: inside an authenticated TLS session, the credential ID in `hello` i
 
 ## What a report contains
 
-Exactly what the **Preview** screen shows: the two PNGs, your description, vector annotations, the selected element (class, accessibility identifier, frame, view hierarchy of class names), controller and navigation context (class names), registered anchors with repository-relative paths, app version and build, device model and OS, build ID, commit, dirty flag and fingerprint, and optional sanitized log entries. Exported reports contain no absolute paths.
+Exactly what the **Preview** screen shows: the included PNGs, your description, vector annotations, selected area, chosen Claude destination, the selected element (class, accessibility identifier, frame, view hierarchy and supported runtime properties), controller and navigation context (class names), registered anchors with repository-relative paths, app version and build, device model and OS, build ID, commit, dirty flag and fingerprint, and optional sanitized log entries. Exported reports contain no absolute paths.
 
-ScreenBridge doesn't collect authentication tokens, network bodies, national ID or banking data, the system log, or accessibility labels and text content beyond what's visible in the screenshot.
+View details can include sanitized label text, button titles, non-secure input text, accessibility label/value, and supported control state. Secure text fields omit their text and accessibility values. Text is best-effort sanitized with the same rules as app logs. Disable view details or logs in the composer to exclude them; screenshot redaction removes pixels and does not remove separately included textual evidence. Preview all selected evidence before sending. ScreenBridge does not read the system console or network bodies.
+
+Portable browser/Code exports are stored locally under `Exports/<report-id>` and are removed when the report is deleted or pruned. Source excerpts use the same project confinement as MCP. Claude configuration is a separate explicit setup action that grants its local MCP process report/image access and confined reads of registered project files.
 
 ### Redaction
 

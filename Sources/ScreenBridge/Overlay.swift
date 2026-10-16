@@ -70,6 +70,8 @@ final class OverlayRootViewController: UIViewController, UIAdaptivePresentationC
     private let highlight = HighlightView()
     private weak var previousKeyWindow: UIWindow?
     private var statusCancellable: AnyCancellable?
+    private var workspaceModel: InspectorModel?
+    private var workspaceHost: UIHostingController<DebugWorkspaceView>?
 
     init(scene: UIWindowScene, connection: ConnectionManager) {
         self.scene = scene
@@ -112,12 +114,13 @@ final class OverlayRootViewController: UIViewController, UIAdaptivePresentationC
         super.viewDidLayoutSubviews()
         if pickerView == nil { layoutButton(animated: false) }
         pickerView?.frame = view.bounds
+        workspaceHost?.view.frame = view.bounds
     }
 
     override func viewWillTransition(to size: CGSize, with coordinator: UIViewControllerTransitionCoordinator) {
         super.viewWillTransition(to: size, with: coordinator)
         coordinator.animate(alongsideTransition: { _ in self.layoutButton(animated: false) })
-        clearHighlight()
+        closeWorkspace()
     }
 
     // Defer status bar appearance and orientations to the app's visible controller.
@@ -191,13 +194,69 @@ final class OverlayRootViewController: UIViewController, UIAdaptivePresentationC
     // MARK: Flows
 
     @objc private func buttonTapped() {
-        guard presentedViewController == nil, let scene else { return }
-        // Capture before any ScreenBridge UI appears.
+        guard presentedViewController == nil, workspaceHost == nil, let scene else { return }
         let capture = ScreenCapture.capture(scene)
         let screen = ElementInspector.resolveScreen(in: scene, projectRoot: ScreenBridgeRuntime.shared.projectRoot)
         let model = InspectorModel(connection: connection, capture: capture, screen: screen)
-        model.onInspectElement = { [weak self] in self?.beginPicking() }
-        presentSheet(InspectorHomeView(model: model), model: model, detents: [.medium(), .large()])
+        workspaceModel = model
+        model.onExit = { [weak self] in self?.closeWorkspace() }
+        model.onSelectPoint = { [weak self, weak model] point in
+            guard let self, let model, let capture = model.capture else { return }
+            let scenePoint = CGPoint(x: point.x / Double(capture.scale), y: point.y / Double(capture.scale))
+            guard let element = ElementInspector.select(at: scenePoint, in: scene) else { return }
+            self.select(element, model: model, scene: scene)
+        }
+        model.onSelectParent = { [weak self, weak model] in
+            guard let self, let model, let current = model.selectedView,
+                  let parent = ElementInspector.parent(of: current, in: scene) else { return }
+            self.select(parent, model: model, scene: scene)
+        }
+        model.canSelectParent = { [weak model] in
+            guard let current = model?.selectedView else { return false }
+            return ElementInspector.parent(of: current, in: scene) != nil
+        }
+        model.onInspectElement = { [weak self, weak model] in
+            model?.workspaceMode = .inspect
+            self?.closeAll()
+        }
+        let workspace = DebugWorkspaceView(model: model, onMore: { [weak self, weak model] in
+            guard let self, let model else { return }
+            model.path = []
+            self.presentSheet(InspectorHomeView(model: model), model: model, detents: [.medium(), .large()])
+        }, onSend: { [weak self, weak model] destination in
+            guard let self, let model else { return }
+            model.destination = destination
+            model.path = []
+            model.beginReport(annotateSelection: false)
+            self.presentSheet(InspectorHomeView(model: model), model: model, detents: [.large()])
+        })
+        let host = UIHostingController(rootView: workspace)
+        host.view.backgroundColor = .clear
+        host.view.accessibilityViewIsModal = true
+        addChild(host)
+        host.view.frame = view.bounds
+        host.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        view.addSubview(host.view)
+        host.didMove(toParent: self)
+        workspaceHost = host
+        button.isHidden = true
+        ScreenBridge.log("Opened debug tools for \(screen?.title ?? "screen")", category: "inspector")
+    }
+
+    private func select(_ element: UIView, model: InspectorModel, scene: UIWindowScene) {
+        let resolved = ElementInspector.resolveElement(element, scene: scene, capture: model.capture,
+                                                       projectRoot: ScreenBridgeRuntime.shared.projectRoot)
+        model.select(resolved, view: element)
+    }
+
+    private func closeWorkspace() {
+        if presentedViewController != nil { dismiss(animated: false) }
+        workspaceHost?.willMove(toParent: nil)
+        workspaceHost?.view.removeFromSuperview()
+        workspaceHost?.removeFromParent()
+        workspaceHost = nil
+        workspaceModel = nil
+        restoreAfterSheet()
     }
 
     private func presentSheet<V: View>(_ rootView: V, model: InspectorModel, detents: [UISheetPresentationController.Detent]) {
@@ -215,6 +274,7 @@ final class OverlayRootViewController: UIViewController, UIAdaptivePresentationC
             w.makeKey()
         }
         button.isHidden = true
+        workspaceHost?.view.accessibilityElementsHidden = true
         present(host, animated: !UIAccessibility.isReduceMotionEnabled)
     }
 
@@ -227,69 +287,11 @@ final class OverlayRootViewController: UIViewController, UIAdaptivePresentationC
     }
 
     private func restoreAfterSheet() {
+        workspaceHost?.view.accessibilityElementsHidden = false
         clearHighlight()
-        button.isHidden = false
+        button.isHidden = workspaceHost != nil
         previousKeyWindow?.makeKey()
         previousKeyWindow = nil
-    }
-
-    private func beginPicking() {
-        dismiss(animated: !UIAccessibility.isReduceMotionEnabled) { [weak self] in
-            guard let self else { return }
-            self.previousKeyWindow?.makeKey()
-            self.previousKeyWindow = nil
-            let picker = PickerOverlayView(frame: self.view.bounds)
-            picker.onCancel = { [weak self] in self?.endPicking() }
-            picker.onTap = { [weak self] p in self?.picked(at: p) }
-            self.view.insertSubview(picker, belowSubview: self.highlight)
-            self.pickerView = picker
-            self.button.isHidden = true
-            UIAccessibility.post(notification: .screenChanged, argument: picker.banner)
-        }
-    }
-
-    private func endPicking() {
-        pickerView?.removeFromSuperview()
-        pickerView = nil
-        clearHighlight()
-        button.isHidden = false
-        layoutButton(animated: false)
-    }
-
-    private func picked(at pointInOverlay: CGPoint) {
-        guard let scene else { return }
-        let scenePoint = view.convert(pointInOverlay, to: scene.coordinateSpace)
-        // The picker lives in our own window, so this capture shows only the app.
-        let capture = ScreenCapture.capture(scene)
-        guard let element = ElementInspector.select(at: scenePoint, in: scene) else {
-            pickerView?.flash(message: "Nothing selectable there. Try another spot.")
-            return
-        }
-        pickerView?.removeFromSuperview()
-        pickerView = nil
-        showSelection(element, capture: capture)
-    }
-
-    private func showSelection(_ element: UIView, capture: CapturedScreen?) {
-        guard let scene else { return }
-        let resolved = ElementInspector.resolveElement(element, scene: scene, capture: capture, projectRoot: ScreenBridgeRuntime.shared.projectRoot)
-        showHighlight(resolved.frameInScene)
-        let model = InspectorModel(connection: connection, capture: capture, screen: ElementInspector.resolveScreen(in: scene, projectRoot: ScreenBridgeRuntime.shared.projectRoot))
-        model.selection = resolved
-        model.selectedView = element
-        model.onSelectParent = { [weak self, weak model] in
-            guard let self, let model, let current = model.selectedView, let parent = ElementInspector.parent(of: current, in: scene) else { return }
-            let r = ElementInspector.resolveElement(parent, scene: scene, capture: model.capture, projectRoot: ScreenBridgeRuntime.shared.projectRoot)
-            model.selectedView = parent
-            model.selection = r
-            self.showHighlight(r.frameInScene)
-        }
-        model.canSelectParent = { [weak model] in
-            guard let v = model?.selectedView else { return false }
-            return ElementInspector.parent(of: v, in: scene) != nil
-        }
-        model.onInspectElement = { [weak self] in self?.beginPicking() }
-        presentSheet(SourceSheetView(model: model), model: model, detents: [.medium(), .large()])
     }
 
     private func showHighlight(_ frameInScene: CGRect) {
@@ -336,7 +338,8 @@ final class FloatingButton: UIControl {
         isAccessibilityElement = true
         accessibilityTraits = .button
         accessibilityLabel = "ScreenBridge inspector"
-        accessibilityHint = "Opens the inspector. Drag to move."
+        accessibilityHint = "Opens floating debug tools. Drag to move."
+        accessibilityIdentifier = "screenbridge.icon"
         largeContentTitle = "ScreenBridge"
         largeContentImage = UIImage(systemName: "viewfinder")
         showsLargeContentViewer = true

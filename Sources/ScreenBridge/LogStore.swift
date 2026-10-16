@@ -10,8 +10,13 @@ final class LogStore: @unchecked Sendable {
     private var buffer = LogRingBuffer(capacity: 200)
 
     func append(level: String, category: String, message: String) {
-        lock.lock(); defer { lock.unlock() }
-        buffer.append(level: level, category: category, message: message)
+        lock.lock()
+        buffer.append(level: LogSanitizer.sanitize(level), category: LogSanitizer.sanitize(category), message: message)
+        let entry = buffer.entries.last
+        lock.unlock()
+        if let entry {
+            print("[ScreenBridge][\(entry.level)][\(entry.category)] \(entry.message)")
+        }
     }
 
     func recent(limit: Int = 100) -> [LogEntry] {

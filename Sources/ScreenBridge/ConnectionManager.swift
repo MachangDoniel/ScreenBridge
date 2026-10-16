@@ -46,8 +46,14 @@ final class ConnectionManager: ObservableObject {
         case failed(reportID: String, error: String)
     }
 
-    @Published private(set) var status: Status
+    @Published private(set) var status: Status {
+        didSet {
+            guard status != oldValue else { return }
+            ScreenBridge.log(status.shortText + (status.detail.map { ": " + $0 } ?? ""), category: "connection")
+        }
+    }
     @Published private(set) var queuedCount = 0
+    @Published private(set) var lastDelivery: SendState?
 
     let config: ConnectionConfig?
     let configProblem: String?
@@ -176,6 +182,7 @@ final class ConnectionManager: ObservableObject {
     // MARK: Sending
 
     func enqueueAndSend(report: DebugReport, parts: [(name: String, data: Data)]) async -> SendState {
+        ScreenBridge.log("Sending report \(report.id) to \(macName)", category: "transfer")
         do {
             try outbox.enqueue(report: report, parts: parts)
         } catch {
@@ -193,6 +200,7 @@ final class ConnectionManager: ObservableObject {
         queuedCount = outbox.items().count
         switch outcome {
         case .acknowledged(let id, let dup):
+            ScreenBridge.log("Mac acknowledged report \(id)", category: "transfer")
             return .acknowledged(reportID: id, duplicate: dup)
         case .failed(let id, let err, _):
             dropSession()
@@ -222,6 +230,15 @@ final class ConnectionManager: ObservableObject {
         guard let session else { return }
         let outcomes = await processor.processDue(using: SessionSender(session: session))
         queuedCount = outbox.items().count
+        for outcome in outcomes {
+            switch outcome {
+            case .acknowledged(let id, let duplicate):
+                lastDelivery = .acknowledged(reportID: id, duplicate: duplicate)
+                ScreenBridge.log("Mac acknowledged queued report \(id)", category: "transfer")
+            case .expired(let id): lastDelivery = .failed(reportID: id, error: "The report expired before it could be sent.")
+            case .failed: break // The outbox retains it for retry.
+            }
+        }
         if outcomes.contains(where: { if case .failed = $0 { return true }; return false }) {
             dropSession()
             connectIfNeeded()

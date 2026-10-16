@@ -147,7 +147,13 @@ public struct ReportStore: Sendable {
 
     public func delete(_ id: String) throws {
         guard ReportID.isValid(id) else { throw StoreError.invalid("Invalid report ID \(id).") }
-        try? FileManager.default.removeItem(at: directory(for: id))
+        let fm = FileManager.default
+        let export = home.root.appendingPathComponent("Exports", isDirectory: true).appendingPathComponent(id, isDirectory: true)
+        // Remove exported evidence first. If cleanup fails, keep the inbox report so
+        // deletion can be retried instead of orphaning a source/screenshot copy.
+        for url in [export, directory(for: id)] where fm.fileExists(atPath: url.path) {
+            try fm.removeItem(at: url)
+        }
     }
 
     public func applyRetention(now: Date = Date()) {

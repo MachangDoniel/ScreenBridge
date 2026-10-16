@@ -81,8 +81,9 @@ public enum ScreenBridge {
         #endif
     }
 
-    /// Records a message in a bounded, sanitized in-memory log that the user may choose
-    /// to attach to a report. ScreenBridge does not read the system console.
+    /// Records and prints a sanitized Debug message. The bounded in-memory log is
+    /// available under More → App logs and can be attached to a report.
+    /// ScreenBridge does not read the system console.
     public static func log(_ message: @autoclosure () -> String, level: LogLevel = .info, category: String = "app") {
         #if SCREENBRIDGE_ENABLED
         LogStore.shared.append(level: level.rawValue, category: category, message: message())

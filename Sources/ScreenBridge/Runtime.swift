@@ -21,9 +21,10 @@ final class ScreenBridgeRuntime: NSObject {
         self.options = options
 
         let (config, problem) = Self.loadConfiguration(options.connectionConfigurationURL)
-        if let problem { print("[ScreenBridge] \(problem)") }
+        if let problem { ScreenBridge.log(problem, level: .warning, category: "connection") }
         let manager = ConnectionManager(config: config, configProblem: problem, outboxCapacity: options.outboxCapacity)
         connection = manager
+        ScreenBridge.log("Debug inspector started", category: "lifecycle")
         manager.start()
 
         let nc = NotificationCenter.default

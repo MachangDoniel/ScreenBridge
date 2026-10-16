@@ -26,7 +26,7 @@ func makeReport(id: String = ReportID.make(), description: String = "Button is m
         let report = makeReport()
         let decoded = try ReportCoding.decode(ReportCoding.encode(report))
         #expect(decoded == report)
-        #expect(decoded.schemaVersion == "1.0")
+        #expect(decoded.schemaVersion == ReportSchema.current)
     }
 
     @Test func acceptsNewerMinorWithUnknownFields() throws {

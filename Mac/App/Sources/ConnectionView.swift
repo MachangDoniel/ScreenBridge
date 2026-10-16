@@ -59,6 +59,7 @@ struct ConnectionView: View {
                 StatusLine(ok: model.mcpInstalled, text: model.mcpInstalled ? "Server command: \(ShimInstaller.mcpCommandPath(home: model.home))" : "MCP command not installed.")
                 StatusLine(ok: model.claudeDesktopConfigured, text: model.claudeDesktopConfigured ? "Claude Desktop config includes “screenbridge”." : "Not in Claude Desktop config yet.")
                 HStack {
+                    Button("Configure Claude Desktop") { model.configureClaudeDesktop() }
                     Button("Copy Claude Desktop configuration") { model.copyMCPConfig() }
                     Spacer()
                 }

@@ -8,7 +8,7 @@ import Foundation
 /// - A different major version is rejected with `ReportSchemaError.incompatibleMajor`.
 public enum ReportSchema {
     public static let major = 1
-    public static let minor = 0
+    public static let minor = 1
     public static var current: String { "\(major).\(minor)" }
 
     public static func parse(_ version: String) throws -> (major: Int, minor: Int) {
@@ -137,8 +137,10 @@ public struct SelectedElement: Codable, Sendable, Equatable {
     public var hierarchy: [ElementNode]
     /// Explanations such as ignored stale cell registrations.
     public var notes: [String]
+    /// Safe runtime values; secure text inputs are omitted.
+    public var properties: [String: String]?
 
-    public init(className: String, displayName: String, accessibilityIdentifier: String?, isSwiftUIMarker: Bool, frameInScreenshot: SBRect, hierarchy: [ElementNode], notes: [String] = []) {
+    public init(className: String, displayName: String, accessibilityIdentifier: String?, isSwiftUIMarker: Bool, frameInScreenshot: SBRect, hierarchy: [ElementNode], notes: [String] = [], properties: [String: String]? = nil) {
         self.className = className
         self.displayName = displayName
         self.accessibilityIdentifier = accessibilityIdentifier
@@ -146,6 +148,7 @@ public struct SelectedElement: Codable, Sendable, Equatable {
         self.frameInScreenshot = frameInScreenshot
         self.hierarchy = hierarchy
         self.notes = notes
+        self.properties = properties
     }
 }
 
@@ -307,6 +310,9 @@ public struct DebugReport: Codable, Sendable, Equatable {
     public var build: BuildInfo
     public var logs: [LogEntry]?
     public var transfer: TransferMetadata?
+    public var claudeDestination: ClaudeDestination?
+    /// Area selected in screenshot pixels; does not crop the screenshot.
+    public var selectedRegion: SBRect?
 
     public init(id: String = ReportID.make(), createdAt: Date = Date(), description: String, screenshot: ScreenshotGeometry, images: [ImageAttachment], annotations: [Annotation], redactionApplied: Bool, selection: SelectedElement?, screen: ScreenContext?, sourceAnchors: [SourceAnchor], app: AppInfo, device: DeviceInfo, build: BuildInfo, logs: [LogEntry]?, transfer: TransferMetadata? = nil) {
         self.schemaVersion = ReportSchema.current

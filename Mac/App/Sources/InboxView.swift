@@ -132,6 +132,9 @@ struct ReportDetailView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 header
+                if let message = model.handoffMessages[stored.id] {
+                    Label(message, systemImage: "paperplane").font(.callout).foregroundStyle(.secondary)
+                }
                 HStack(alignment: .top, spacing: 24) {
                     screenshot
                         .frame(maxWidth: 360)
@@ -220,6 +223,11 @@ struct ReportDetailView: View {
             if let el = report.selection {
                 LabeledContent("Selected element") {
                     Text("\(el.displayName) — \(el.className)\(el.accessibilityIdentifier.map { " #\($0)" } ?? "")").textSelection(.enabled)
+                }
+            }
+            if let properties = report.selection?.properties {
+                ForEach(properties.keys.sorted(), id: \.self) { key in
+                    LabeledContent(key) { Text(properties[key] ?? "").textSelection(.enabled) }
                 }
             }
             if let s = report.screen {
@@ -412,7 +420,7 @@ struct PrepareForClaudeSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Prepare for Claude").font(.title2.weight(.semibold))
-            Text("Paste this request into Claude Desktop or a Claude Code session that has the ScreenBridge MCP server configured. Claude then reads the report, its screenshot and the linked source through the read-only tools.")
+            Text("Open Claude Desktop or Claude Code with a prepared prompt. Claude can read the report and screenshots through ScreenBridge. Browser chats use an exported report and manual image attachments.")
                 .foregroundStyle(.secondary)
             GroupBox {
                 Text(AppModel.claudeRequest(for: reportID))
@@ -425,11 +433,26 @@ struct PrepareForClaudeSheet: View {
                 StatusLine(ok: model.mcpInstalled, text: model.mcpInstalled ? "MCP server installed at \(ShimInstaller.mcpCommandPath(home: model.home))" : "MCP command not installed (restart ScreenBridge).")
                 StatusLine(ok: model.claudeDesktopConfigured, text: model.claudeDesktopConfigured ? "Claude Desktop is configured for ScreenBridge." : "Claude Desktop is not configured yet. Copy the configuration, add it to claude_desktop_config.json and restart Claude Desktop.")
             }
-            Text("ScreenBridge can't post into a Claude conversation or start a reply by itself; you send the request.")
+            if let stored = try? ReportStore(home: model.home).load(reportID) {
+                HStack {
+                    ForEach([ClaudeDestination.desktop, .code, .browser]) { destination in
+                        Button(destination.title) { model.openClaude(for: stored, destination: destination) }
+                    }
+                }
+                if stored.imageURL(.annotated) != nil {
+                    Button("Copy screenshot") { model.copyScreenshot(for: stored) }
+                    Text("Paste into the Claude draft with ⌘V to attach the image. Desktop links prefill text; they cannot attach screenshots.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                if let message = model.handoffMessages[reportID] {
+                    Text(message).font(.callout).foregroundStyle(.secondary)
+                }
+            }
+            Text("Review the prepared prompt and press Send in Claude. Browser: paste the copied report and attach the exported PNG files.")
                 .font(.caption).foregroundStyle(.secondary)
             HStack {
                 if !model.claudeDesktopConfigured {
-                    Button("Copy MCP configuration") { model.copyMCPConfig() }
+                    Button("Configure Claude Desktop") { model.configureClaudeDesktop() }
                 }
                 Spacer()
                 Button("Close") { dismiss() }

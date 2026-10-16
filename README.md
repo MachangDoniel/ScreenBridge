@@ -64,7 +64,7 @@ Screens from the [demo app](https://github.com/MachangDoniel/ScreenBridgeDemo) o
    Text(title).screenBridgeSource("ProfileHeader")                         // SwiftUI
    ScreenBridge.register(ProfileViewModel.self, role: "viewModel")         // in the type's own file
    ```
-5. Run from Xcode, tap the button, then **Report a change › Send to Mac**. In Claude, ask:
+5. Run from Xcode, tap the button, choose your tools, then **Send to Claude**. In Claude, ask:
    *“Read ScreenBridge report SB-…, inspect its screenshot and linked source, and propose a fix.”*
 
 ## Repository layout
@@ -84,4 +84,8 @@ Screens from the [demo app](https://github.com/MachangDoniel/ScreenBridgeDemo) o
 - A runtime `UIView` does not know which Swift line created it. ScreenBridge shows **registration anchors**: the `#filePath`/`#line` where code registered a screen or element. That's often the definition, not the buggy line. Unregistered related types may get repository-search **inferred candidates**, which are labeled as unverified.
 - Adding the SPM dependency doesn't install the Mac app or edit your build phases. Setup is the explicit one-time step above.
 - v1 needs both devices on a reachable local network. Xcode's USB debugging channel isn't used.
-- MCP can't post into an existing Claude conversation or start a reply. “Prepare for Claude” copies a request for you to send.
+- Claude Code is the default handoff; Claude Desktop, browser export and Mac inbox are also available. Desktop/Code open a prepared prompt for you to review and send. Browser chats use an exported report and manual image attachments. See [Claude handoff setup](Docs/MCP.md#floating-workspace-and-destinations).
+
+## Debug workspace
+
+Tap the icon for a single row of tools: Select, Pen, Rect, Ellipse, Arrow, Edit annotations, Undo, Redo and More. Drag its grip or any empty panel surface to any corner. Select inspects app views by default. Blue tools draw; orange Edit annotations selects markup for dragging, deleting, and two-finger pinch resizing. **×** hides it while preserving markup. **More** contains Delete all, area selection, colors, redaction, object properties, registered source anchors, source inspection, live app logs and connection status. Send and Claude actions appear beneath the toolbar after a selection or edit. `ScreenBridge.log` prints sanitized messages to the Debug console as well as keeping them in a bounded buffer. Xcode loader and system console messages are not captured. Choose logs, view details, source links and screenshots independently before sending.

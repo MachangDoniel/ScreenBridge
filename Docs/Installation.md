@@ -127,14 +127,15 @@ In Release builds every API compiles to an inlinable no-op, so registration call
 ScreenBridge.log("Loaded \(items.count) items", category: "feed")
 ```
 
-This is a bounded 200-entry in-memory ring, sanitized as entries are written (tokens, JWTs, password and secret fields, emails, and runs of 9+ digits such as card, account or ID numbers are removed). The user opts in per report and sees every entry in the preview. ScreenBridge doesn't read the system console or capture network traffic.
+This is a bounded 200-entry in-memory ring, sanitized as entries are written (tokens, JWTs, password and secret fields, emails, and runs of 9+ digits such as card, account or ID numbers are removed). The user opts in per report and sees every entry in the preview. Sanitized messages also print to the Debug console. **More → App logs** displays the live buffer. ScreenBridge doesn't read the system console or capture network traffic.
 
 ## Using it
 
 1. Run the Debug build from Xcode. The floating button's dot shows status: green means connected, orange means searching, grey means not configured, red means a problem. VoiceOver reads the status.
 2. Tap the button. The screenshot is captured before any inspector UI appears.
-   - **Inspect an element**: tap any view to see its class, accessibility identifier, registered anchor, owning screen, related types and navigation context. **Select parent element** walks up the hierarchy. **Reveal source on Mac** opens the file at the anchor line in Xcode.
-   - **Screen source**: shows the visible screen's registration.
-   - **Report a change**: draw with pen, ellipse, arrow or opaque redaction (undo is available), describe the change, optionally attach logs, **Preview what will be sent**, then **Send to Mac**.
+   - **Select**: tap any view to highlight it, then open More for its class, accessibility identifier, registered anchor, owning screen, related types and navigation context. **Select parent element** walks up the hierarchy. **Reveal source on Mac** opens the file at the anchor line in Xcode.
+   - **More**: opens the bottom sheet with screen source, selected object details, navigation, live app logs and connection status.
+   - Draw with pen, rectangle, ellipse, arrow or opaque redaction; choose colors and undo. **Area** selects a screenshot region. Drag the grip to any corner; Hide leaves a small reopen button and preserves the inspection.
+   - **Send to Claude**: describe the change, choose logs, view details, source links and screenshots, preview the report and select a destination. Claude Desktop is the default; Claude Code, browser export and Mac inbox are available.
 3. After the Mac acknowledges: *“On your Mac. Report SB-… is ready.”* If the Mac is unreachable, the report is saved on the device and retried automatically with bounded backoff.
-4. On the Mac, open the inbox from the menu-bar icon. Use **Prepare for Claude** or **Copy request**, then ask Claude. See [MCP.md](MCP.md).
+4. The Mac opens the requested Claude destination with a prepared prompt; review and send it in Claude. Configure the Desktop MCP connector first. Reports also remain in the inbox with **Prepare for Claude** and **Copy request** actions. See [MCP.md](MCP.md).

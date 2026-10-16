@@ -146,6 +146,8 @@ public enum AnnotationRenderer {
                 ctx.addLines(between: pts)
                 ctx.strokePath()
             }
+        case .rectangle:
+            ctx.stroke(a.bounds.cgRect)
         case .ellipse:
             ctx.strokeEllipse(in: a.bounds.cgRect)
         case .arrow:

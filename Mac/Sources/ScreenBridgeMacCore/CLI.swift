@@ -23,6 +23,7 @@ public enum ScreenBridgeCLI {
     Claude
       mcp                      Run the MCP server on stdio
       mcp-config               Print the Claude Desktop configuration snippet
+      configure-claude         Merge ScreenBridge into Claude Desktop configuration
       install                  Install command shims pointing at this executable
 
     Environment: SCREENBRIDGE_HOME overrides ~/Library/Application Support/ScreenBridge
@@ -87,6 +88,13 @@ public enum ScreenBridgeCLI {
 
             case "mcp-config":
                 print(ShimInstaller.claudeDesktopSnippet(home: home))
+                return 0
+
+            case "configure-claude":
+                let url = FileManager.default.homeDirectoryForCurrentUser
+                    .appendingPathComponent("Library/Application Support/Claude/claude_desktop_config.json")
+                try ClaudeHandoff.configureDesktop(command: ShimInstaller.mcpCommandPath(home: home), at: url)
+                print("ScreenBridge configured. Quit and reopen Claude Desktop to load the connector.")
                 return 0
 
             case "install":

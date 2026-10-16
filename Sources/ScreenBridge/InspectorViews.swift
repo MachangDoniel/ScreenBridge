@@ -131,8 +131,38 @@ struct InspectorHomeView: View {
             List {
                 Section {
                     ConnectionStatusRow(connection: model.connection)
+                    Button("Delete all", systemImage: "trash", role: .destructive) {
+                        model.deleteAll()
+                        model.onClose()
+                    }
+                    .disabled(model.annotations.isEmpty && model.selection == nil && model.selectedRegion == nil)
+                }
+                Section("Color") {
+                    AnnotationColorPicker(color: $model.annotationColor)
+                }
+                Section("Drawing") {
+                    Button("Select area", systemImage: "rectangle.dashed") {
+                        model.workspaceMode = .area
+                        model.onClose()
+                    }
+                    Button("Redact", systemImage: "rectangle.fill") {
+                        model.tool = .redaction
+                        model.workspaceMode = .draw
+                        model.onClose()
+                    }
+                }
+                if let selected = model.selection {
+                    Section("Selected object") {
+                        NavigationLink(value: InspectorRoute.selectedSource) {
+                            MenuRow(symbol: "scope", title: selected.title, subtitle: selected.subtitle)
+                        }
+                        .accessibilityIdentifier("screenbridge.selection")
+                    }
                 }
                 Section {
+                    NavigationLink(value: InspectorRoute.logs) {
+                        MenuRow(symbol: "text.alignleft", title: "App logs", subtitle: "Live debug messages and connection activity")
+                    }
                     Button {
                         model.onInspectElement()
                     } label: {
@@ -189,19 +219,28 @@ struct InspectorDestination: View {
     @ObservedObject var model: InspectorModel
 
     var body: some View {
-        switch route {
-        case .screenSource:
-            if let screen = model.screen {
-                SourceDetailList(model: model, resolved: screen, isScreen: true)
-                    .navigationTitle("Screen source")
+        Group {
+            switch route {
+            case .logs:
+                AppLogsView()
+            case .selectedSource:
+                if let selection = model.selection {
+                    SourceDetailList(model: model, resolved: selection, isScreen: false).navigationTitle("Selected object")
+                }
+            case .screenSource:
+                if let screen = model.screen {
+                    SourceDetailList(model: model, resolved: screen, isScreen: true)
+                        .navigationTitle("Screen source")
+                }
+            case .report:
+                ReportEditorView(model: model)
+            case .preview:
+                SendPreviewView(model: model)
+            case .status:
+                SendStatusView(model: model)
             }
-        case .report:
-            ReportEditorView(model: model)
-        case .preview:
-            SendPreviewView(model: model)
-        case .status:
-            SendStatusView(model: model)
         }
+        .toolbar { CloseToolbar(action: model.onClose) }
     }
 }
 
@@ -254,6 +293,13 @@ struct SourceDetailList: View {
                 }
             }
 
+            if let properties = resolved.element?.properties, !properties.isEmpty {
+                Section("Properties") {
+                    ForEach(properties.keys.sorted(), id: \.self) { key in
+                        LabeledContent(key, value: properties[key] ?? "").font(.footnote.monospaced())
+                    }
+                }
+            }
             if !isScreen {
                 Section {
                     if resolved.elementAnchors.isEmpty {
@@ -348,7 +394,7 @@ struct ReportEditorView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 if let capture = model.capture {
-                    AnnotationCanvas(image: capture.image, pixelSize: CGSize(width: capture.cgImage.width, height: capture.cgImage.height), scale: capture.scale, annotations: $model.annotations, tool: model.tool)
+                    AnnotationCanvas(image: capture.image, pixelSize: CGSize(width: capture.cgImage.width, height: capture.cgImage.height), scale: capture.scale, annotations: $model.annotations, tool: model.tool, color: model.annotationColor)
                         .frame(height: 380)
                         .frame(maxWidth: .infinity)
                         .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
@@ -357,6 +403,7 @@ struct ReportEditorView: View {
                 HStack(spacing: 8) {
                     Picker("Tool", selection: $model.tool) {
                         Image(systemName: "scribble").accessibilityLabel("Pen").tag(AnnotationTool.pen)
+                        Image(systemName: "rectangle").accessibilityLabel("Rectangle").tag(AnnotationTool.rectangle)
                         Image(systemName: "circle").accessibilityLabel("Ellipse").tag(AnnotationTool.ellipse)
                         Image(systemName: "arrow.up.right").accessibilityLabel("Arrow").tag(AnnotationTool.arrow)
                         Image(systemName: "rectangle.fill").accessibilityLabel("Redact").tag(AnnotationTool.redaction)
@@ -369,9 +416,16 @@ struct ReportEditorView: View {
                             .frame(minWidth: 44, minHeight: 32)
                     }
                     .buttonStyle(.bordered)
-                    .disabled(model.annotations.isEmpty)
+                    .disabled(!model.canUndo)
                     .accessibilityLabel("Undo")
+                    Button { model.redo() } label: {
+                        Image(systemName: "arrow.uturn.forward").frame(minWidth: 44, minHeight: 32)
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(!model.canRedo)
+                    .accessibilityLabel("Redo")
                 }
+                AnnotationColorPicker(color: $model.annotationColor)
                 if model.tool == .redaction {
                     Label("Redaction permanently removes those pixels from everything that is sent.", systemImage: "eye.slash")
                         .font(.footnote).foregroundStyle(.secondary)
@@ -386,7 +440,7 @@ struct ReportEditorView: View {
                         .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                 }
 
-                if let ctx = model.reportContext {
+                if model.includeSource, let ctx = model.reportContext {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Attached source context").font(.headline)
                         if ctx.allAnchors.isEmpty {
@@ -400,13 +454,22 @@ struct ReportEditorView: View {
                     }
                 }
 
-                Toggle(isOn: $model.includeLogs) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Attach recent app logs")
-                        Text("\(model.availableLogCount) entries from ScreenBridge.log, sanitized").font(.footnote).foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Include in report").font(.headline)
+                    Toggle("App logs (\(model.availableLogCount) entries)", isOn: $model.includeLogs)
+                    Toggle("Selected view and screen details", isOn: $model.includeViewDetails)
+                    Toggle("Current view file and related files", isOn: $model.includeSource)
+                    Toggle("Screenshots and annotations", isOn: $model.includeScreenshots)
+                    Picker("Open on Mac", selection: $model.destination) {
+                        ForEach(ClaudeDestination.allCases) { Text($0.title).tag($0) }
                     }
+                    Text(model.destination == .browser
+                         ? "Your Mac opens Claude in a browser and an export folder. Paste the copied report and attach its PNG files."
+                         : model.destination == .inbox
+                         ? "Save to the ScreenBridge inbox on your Mac."
+                         : "Your Mac opens \(model.destination.title) with a prepared prompt. Review it and press Send in Claude. Configure the ScreenBridge connector on your Mac to read the report and screenshots.")
+                        .font(.footnote).foregroundStyle(.secondary)
                 }
-                .disabled(model.availableLogCount == 0)
 
                 NavigationLink(value: InspectorRoute.preview) {
                     Label("Preview what will be sent", systemImage: "doc.viewfinder")
@@ -420,8 +483,9 @@ struct ReportEditorView: View {
                     descriptionFocused = false
                     model.send()
                 } label: {
-                    Text("Send to Mac").frame(maxWidth: .infinity)
+                    Text(model.destination == .inbox ? "Send to Mac" : "Send to Claude").frame(maxWidth: .infinity)
                 }
+                .accessibilityIdentifier("screenbridge.submit")
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
                 .disabled(model.capture == nil)
@@ -447,7 +511,19 @@ struct AnnotationCanvas: View {
     let scale: CGFloat
     @Binding var annotations: [Annotation]
     let tool: AnnotationTool
+    var color: SBColor = .markup
+    var mode: InspectorModel.WorkspaceMode = .draw
+    var selectedRegion: SBRect?
+    var selectedFrame: SBRect?
+    var onSelect: (SBPoint) -> Void = { _ in }
+    var onRegion: (SBRect) -> Void = { _ in }
     @State private var draft: Annotation?
+    @State private var selectedAnnotationID: UUID?
+    @State private var movingAnnotation: Annotation?
+    @State private var moveOffset = CGSize.zero
+    @State private var resizingAnnotation: Annotation?
+    @State private var resizeFactor = 1.0
+    @State private var suppressDrag = false
 
     var body: some View {
         GeometryReader { geo in
@@ -461,7 +537,24 @@ struct AnnotationCanvas: View {
                     .accessibilityHidden(true)
                 Canvas { ctx, _ in
                     for a in annotations + (draft.map { [$0] } ?? []) {
-                        Self.draw(a, in: &ctx, mapping: mapping)
+                        let displayed = resizingAnnotation?.id == a.id ? a.resized(by: resizeFactor)
+                            : (movingAnnotation?.id == a.id
+                               ? a.translated(dx: Double(moveOffset.width), dy: Double(moveOffset.height)) : a)
+                        Self.draw(displayed, in: &ctx, mapping: mapping)
+                        if mode == .editAnnotations, a.id == selectedAnnotationID {
+                            let b = displayed.bounds
+                            let start = mapping.viewPoint(fromImage: CGPoint(x: b.x, y: b.y))
+                            let end = mapping.viewPoint(fromImage: CGPoint(x: b.x + b.width, y: b.y + b.height))
+                            ctx.stroke(Path(CGRect(corner: start, corner: end).insetBy(dx: -6, dy: -6)),
+                                       with: .color(.blue), style: StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
+                        }
+                    }
+                    for rect in [selectedRegion, selectedFrame].compactMap({ $0 }) {
+                        let first = mapping.viewPoint(fromImage: CGPoint(x: rect.x, y: rect.y))
+                        let last = mapping.viewPoint(fromImage: CGPoint(x: rect.x + rect.width, y: rect.y + rect.height))
+                        let path = Path(CGRect(corner: first, corner: last))
+                        ctx.fill(path, with: .color(.cyan.opacity(0.12)))
+                        ctx.stroke(path, with: .color(.cyan), style: StrokeStyle(lineWidth: 2, dash: [6, 3]))
                     }
                 }
                 .allowsHitTesting(false)
@@ -470,12 +563,25 @@ struct AnnotationCanvas: View {
             .gesture(
                 DragGesture(minimumDistance: 0)
                     .onChanged { value in
+                        guard mapping.displayRect.contains(value.startLocation) else { return }
+                        guard !suppressDrag, resizingAnnotation == nil else { return }
+                        if mode == .inspect { return }
+                        if mode == .editAnnotations {
+                            if movingAnnotation == nil {
+                                let start = SBPoint(mapping.imagePoint(fromView: value.startLocation))
+                                movingAnnotation = annotations.reversed().first { $0.contains(start, tolerance: Double(12 / mapping.pointsPerPixel)) }
+                                if let movingAnnotation { selectedAnnotationID = movingAnnotation.id }
+                            }
+                            moveOffset = CGSize(width: value.translation.width / mapping.pointsPerPixel,
+                                                height: value.translation.height / mapping.pointsPerPixel)
+                            return
+                        }
                         let p = SBPoint(mapping.imagePoint(fromView: value.location))
                         if draft == nil {
                             let start = SBPoint(mapping.imagePoint(fromView: value.startLocation))
-                            draft = Annotation(tool: tool, points: [start], strokeWidth: Double(scale) * (tool == .pen ? 3 : 3))
+                            draft = Annotation(tool: mode == .area ? .rectangle : tool, points: [start], strokeWidth: Double(scale) * 3, color: mode == .area ? SBColor(red: 0, green: 0.8, blue: 1) : (tool == .redaction ? .redaction : color))
                         }
-                        if tool == .pen {
+                        if mode == .draw && tool == .pen {
                             draft?.points.append(p)
                         } else if draft!.points.count == 1 {
                             draft?.points.append(p)
@@ -483,17 +589,92 @@ struct AnnotationCanvas: View {
                             draft?.points[1] = p
                         }
                     }
-                    .onEnded { _ in
-                        if let d = draft, d.isRenderable { annotations.append(d) }
+                    .onEnded { value in
+                        if suppressDrag {
+                            suppressDrag = false
+                            movingAnnotation = nil
+                            draft = nil
+                            moveOffset = .zero
+                            return
+                        }
+                        if mode == .inspect, mapping.displayRect.contains(value.location) {
+                            selectedAnnotationID = nil
+                            onSelect(SBPoint(mapping.imagePoint(fromView: value.location)))
+                        } else if mode == .editAnnotations {
+                            if let moving = movingAnnotation,
+                               let index = annotations.firstIndex(where: { $0.id == moving.id }) {
+                                if hypot(value.translation.width, value.translation.height) > 3 {
+                                    annotations[index] = moving.translated(dx: Double(moveOffset.width), dy: Double(moveOffset.height))
+                                }
+                            } else if mapping.displayRect.contains(value.location) {
+                                selectedAnnotationID = nil
+                            }
+                        } else if let d = draft, d.isRenderable {
+                            if mode == .area { onRegion(d.bounds) } else { annotations.append(d) }
+                        }
                         draft = nil
+                        movingAnnotation = nil
+                        moveOffset = .zero
                     }
             )
-            .accessibilityElement()
+            .simultaneousGesture(
+                MagnificationGesture()
+                    .onChanged { factor in
+                        guard mode == .editAnnotations else { return }
+                        if resizingAnnotation == nil {
+                            resizingAnnotation = annotations.first { $0.id == selectedAnnotationID }
+                        }
+                        guard resizingAnnotation != nil else { return }
+                        suppressDrag = true
+                        movingAnnotation = nil
+                        draft = nil
+                        resizeFactor = min(10, max(0.1, Double(factor)))
+                    }
+                    .onEnded { factor in
+                        if let original = resizingAnnotation,
+                           let index = annotations.firstIndex(where: { $0.id == original.id }) {
+                            annotations[index] = original.resized(by: min(10, max(0.1, Double(factor))))
+                        }
+                        resizingAnnotation = nil
+                        resizeFactor = 1
+                        moveOffset = .zero
+                    }
+            )
+            .overlay(alignment: .topLeading) {
+                if mode == .editAnnotations, movingAnnotation == nil, resizingAnnotation == nil,
+                   let selected = annotations.first(where: { $0.id == selectedAnnotationID }) {
+                    let b = selected.bounds
+                    let anchor = mapping.viewPoint(fromImage: CGPoint(x: b.x + b.width / 2, y: b.y))
+                    HStack(spacing: 0) {
+                        Button {
+                            annotations.removeAll { $0.id == selected.id }
+                            selectedAnnotationID = nil
+                        } label: {
+                            Image(systemName: "trash").foregroundStyle(.red).frame(width: 40, height: 40)
+                        }
+                        .accessibilityLabel("Delete annotation")
+                    }
+                    .font(.system(size: 15, weight: .medium))
+                    .buttonStyle(.plain)
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
+                    .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(.primary.opacity(0.12)))
+                    .shadow(color: .black.opacity(0.12), radius: 5, y: 2)
+                    .position(x: max(24, min(geo.size.width - 24, anchor.x)),
+                              y: anchor.y >= 52 ? anchor.y - 28 : min(geo.size.height - 24, anchor.y + CGFloat(b.height) * mapping.pointsPerPixel + 28))
+                }
+            }
+            .accessibilityElement(children: .contain)
             .accessibilityLabel("Screenshot")
-            .accessibilityValue("\(annotations.count) annotation\(annotations.count == 1 ? "" : "s")")
-            .accessibilityHint("Drag to draw with the selected tool.")
+            .accessibilityValue(annotationAccessibilityValue)
+            .accessibilityHint(mode == .inspect ? "Tap to inspect a view." : mode == .editAnnotations ? "Tap an annotation to select it. Drag to move; pinch to resize." : "Drag to draw with the selected tool.")
         }
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+
+    private var annotationAccessibilityValue: String {
+        let count = "\(annotations.count) annotation\(annotations.count == 1 ? "" : "s")"
+        guard let selected = annotations.first(where: { $0.id == selectedAnnotationID }) else { return count }
+        return count + ". Selected \(selected.tool.rawValue), width \(Int(selected.bounds.width)), height \(Int(selected.bounds.height))"
     }
 
     static func draw(_ a: Annotation, in ctx: inout GraphicsContext, mapping: AspectFitMapping) {
@@ -503,9 +684,18 @@ struct AnnotationCanvas: View {
         let style = StrokeStyle(lineWidth: max(1.5, CGFloat(a.strokeWidth) * k), lineCap: .round, lineJoin: .round)
         switch a.tool {
         case .pen:
+            if let point = pts.first, pts.count == 1 {
+                let diameter = style.lineWidth
+                let rect = CGRect(x: point.x - diameter / 2, y: point.y - diameter / 2, width: diameter, height: diameter)
+                ctx.fill(Path(ellipseIn: rect), with: .color(color))
+                return
+            }
             var path = Path()
             path.addLines(pts)
             ctx.stroke(path, with: .color(color), style: style)
+        case .rectangle:
+            guard pts.count >= 2 else { return }
+            ctx.stroke(Path(CGRect(corner: pts[0], corner: pts[pts.count - 1])), with: .color(color), style: style)
         case .ellipse:
             guard pts.count >= 2 else { return }
             ctx.stroke(Path(ellipseIn: CGRect(corner: pts[0], corner: pts[pts.count - 1])), with: .color(color), style: style)
@@ -547,15 +737,17 @@ struct SendPreviewView: View {
                 Text(error).foregroundStyle(.red)
             }
             if let payload {
-                Section {
-                    PreviewImage(data: payload.exported.annotatedPNG, label: "Annotated screenshot")
-                    PreviewImage(data: payload.exported.originalPNG, label: payload.exported.redactionApplied ? "Screenshot without markup (redactions applied)" : "Screenshot without markup")
-                } header: {
-                    Text("Images")
-                } footer: {
-                    Text(payload.exported.redactionApplied
-                         ? "Redacted pixels are removed from both images. No unredacted copy or thumbnail is sent."
-                         : "Images are re-encoded as PNG without capture metadata.")
+                if !payload.report.images.isEmpty {
+                    Section {
+                        PreviewImage(data: payload.exported.annotatedPNG, label: "Annotated screenshot")
+                        PreviewImage(data: payload.exported.originalPNG, label: payload.exported.redactionApplied ? "Screenshot without markup (redactions applied)" : "Screenshot without markup")
+                    } header: {
+                        Text("Images")
+                    } footer: {
+                        Text(payload.exported.redactionApplied
+                             ? "Redacted pixels are removed from both images. No unredacted copy or thumbnail is sent."
+                             : "Images are re-encoded as PNG without capture metadata.")
+                    }
                 }
                 Section("Description") {
                     Text(payload.report.description.isEmpty ? "No description" : payload.report.description)
@@ -564,6 +756,14 @@ struct SendPreviewView: View {
                 Section("Source context") {
                     if let el = payload.report.selection {
                         LabeledContent("Element", value: el.displayName)
+                    }
+                    if let properties = payload.report.selection?.properties {
+                        ForEach(properties.keys.sorted(), id: \.self) { key in
+                            LabeledContent(key, value: properties[key] ?? "").font(.footnote.monospaced())
+                        }
+                    }
+                    if let region = payload.report.selectedRegion {
+                        LabeledContent("Selected area", value: "\(Int(region.width)) × \(Int(region.height)) px at \(Int(region.x)), \(Int(region.y))")
                     }
                     if let s = payload.report.screen {
                         LabeledContent("Screen", value: s.owningController)
@@ -642,7 +842,7 @@ struct SendStatusView: View {
                 Text("On your Mac. Report \(id) is ready.")
                     .font(.title3.weight(.semibold))
                     .multilineTextAlignment(.center)
-                Text(duplicate ? "Your Mac already had this report." : "Open the ScreenBridge inbox on your Mac, then use “Prepare for Claude” to ask Claude about it.")
+                Text(duplicate ? "Your Mac already had this report. Open its inbox to prepare it again." : model.destination == .inbox ? "Open the ScreenBridge inbox on your Mac." : "Check \(model.destination.title) on your Mac. Review and send the prepared prompt. If it could not open, use the report in the ScreenBridge inbox.")
                     .font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
             case .queued(_, let reason):
                 StatusIcon(symbol: "tray.and.arrow.up.fill", color: .orange)
@@ -659,7 +859,7 @@ struct SendStatusView: View {
             Button {
                 model.onClose()
             } label: {
-                Text("Back to app").frame(maxWidth: .infinity)
+                Text("Back to tools").frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
